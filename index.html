@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Слайм в Тумане</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; font-family: 'Courier New', monospace; background: #000; }
+  canvas { display: block; }
+
+  #info {
+    position: absolute; top: 12px; left: 12px; color: #88ff88;
+    background: rgba(0,0,0,0.6); padding: 10px 14px; border-radius: 6px;
+    pointer-events: none; font-size: 13px; border: 1px solid #2a4a2a;
+    z-index: 5;
+  }
+  #score {
+    position: absolute; top: 12px; right: 12px; color: #aaffaa;
+    background: rgba(0,0,0,0.6); padding: 10px 18px; border-radius: 6px;
+    font-size: 18px; font-weight: bold; border: 1px solid #2a4a2a;
+    z-index: 5;
+  }
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 10;
+  }
+  #warning {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    color: #ff2222; font-size: 40px; font-weight: bold;
+    text-shadow: 0 0 20px #ff0000; opacity: 0;
+    pointer-events: none; letter-spacing: 8px; z-index: 11;
+    transition: opacity 0.15s;
+  }
+
+  /* -------- СКРИМЕР -------- */
+  #jumpscare {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    background: #000; justify-content: center; align-items: center;
+    overflow: hidden;
+  }
+  #jumpscare.active { display: flex; animation: shake 0.05s infinite; }
+  @keyframes shake {
+    0%   { transform: translate(0,0) rotate(0deg); }
+    25%  { transform: translate(-10px, 8px) rotate(-1deg); }
+    50%  { transform: translate(12px, -6px) rotate(1deg); }
+    75%  { transform: translate(-8px, -10px) rotate(-1.5deg); }
+    100% { transform: translate(6px, 10px) rotate(1deg); }
+  }
+  #jumpscare svg { width: 100%; height: 100%; filter: drop-shadow(0 0 40px #ff0000); }
+  #flash {
+    position: fixed; inset: 0; z-index: 99; background: red;
+    opacity: 0; pointer-events: none;
+  }
+
+  /* -------- ЭКРАНЫ -------- */
+  #start {
+    position: absolute; inset: 0; background: radial-gradient(circle, #0a0a0a, #000);
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    z-index: 20; cursor: pointer; color: #88ff88; text-align: center;
+  }
+  #start h1 {
+    font-size: 56px; letter-spacing: 10px; margin-bottom: 20px;
+    color: #ff2222; text-shadow: 0 0 30px #ff0000;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { text-shadow: 0 0 30px #ff0000; }
+    50% { text-shadow: 0 0 60px #ff0000, 0 0 100px #ff0000; }
+  }
+  #start p { margin: 8px; font-size: 16px; color: #88ff88; }
+  #start .hint { color: #666; font-size: 13px; margin-top: 30px; }
+
+  .overlay {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.95);
+    display: none; flex-direction: column; justify-content: center; align-items: center;
+    z-index: 20; color: white; text-align: center;
+  }
+  .overlay.show { display: flex; }
+  .overlay h1 {
+    font-size: 72px; letter-spacing: 15px; margin-bottom: 20px;
+  }
+  #gameover h1 { color: #ff0000; text-shadow: 0 0 40px #ff0000; }
+  #victory h1 { color: #66ff88; text-shadow: 0 0 40px #00ff44; }
+  .overlay p { font-size: 20px; margin: 10px; color: #aaa; }
+  .overlay button {
+    margin-top: 30px; padding: 15px 40px; font-size: 18px;
+    background: transparent; color: #88ff88; border: 2px solid #88ff88;
+    cursor: pointer; letter-spacing: 3px; font-family: inherit;
+    transition: all 0.2s;
+  }
+  .overlay button:hover { background: #88ff88; color: #000; }
+</style>
+</head>
+<body>
+
+<div id="info">
+  🟢 <b>СЛАЙМ</b> — WASD движение | ПРОБЕЛ прыжок (удерживай)<br>
+  🖱️ Мышь — поворот | 🎯 Цель: собрать <b>10 ДУШ</b>
+</div>
+<div id="score">ДУШИ: 0 / 10</div>
+<div id="vignette"></div>
+<div id="warning">ОНО РЯДОМ</div>
+<div id="flash"></div>
+
+<!-- СКРИМЕР -->
+<div id="jumpscare">
+  <svg viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+    <!-- Голова -->
+    <ellipse cx="400" cy="320" rx="340" ry="280" fill="#050000"/>
+    <ellipse cx="400" cy="320" rx="340" ry="280" fill="url(#radial)" opacity="0.5"/>
+    <defs>
+      <radialGradient id="radial">
+        <stop offset="60%" stop-color="#000"/>
+        <stop offset="100%" stop-color="#ff0000"/>
+      </radialGradient>
+    </defs>
+
+    <!-- Глаза -->
+    <ellipse cx="240" cy="220" rx="110" ry="70" fill="#ff0000"/>
+    <ellipse cx="560" cy="220" rx="110" ry="70" fill="#ff0000"/>
+    <ellipse cx="240" cy="220" rx="90" ry="55" fill="#ffdddd"/>
+    <ellipse cx="560" cy="220" rx="90" ry="55" fill="#ffdddd"/>
+    <ellipse cx="240" cy="220" rx="28" ry="50" fill="#000"/>
+    <ellipse cx="560" cy="220" rx="28" ry="50" fill="#000"/>
+    <!-- Красный зрачок -->
+    <ellipse cx="240" cy="220" rx="18" ry="40" fill="#ff0000"/>
+    <ellipse cx="560" cy="220" rx="18" ry="40" fill="#ff0000"/>
+
+    <!-- Рот -->
+    <path d="M 150 400 Q 400 530 650 400 Q 400 580 150 400 Z" fill="#0a0000"/>
+
+    <!-- Зубы верхние -->
+    <polygon points="170,405 210,470 250,408" fill="#ddd"/>
+    <polygon points="255,412 295,485 335,415" fill="#ddd"/>
+    <polygon points="340,418 380,495 420,420" fill="#ddd"/>
+    <polygon points="425,420 465,495 505,418" fill="#ddd"/>
+    <polygon points="510,415 550,485 590,412" fill="#ddd"/>
+    <polygon points="595,408 630,470 665,405" fill="#ddd"/>
+
+    <!-- Зубы нижние -->
+    <polygon points="200,470 240,405 280,485" fill="#aaa"/>
+    <polygon points="290,490 330,415 370,495" fill="#aaa"/>
+    <polygon points="380,500 420,420 460,500" fill="#aaa"/>
+    <polygon points="470,495 510,415 550,490" fill="#aaa"/>
+    <polygon points="560,485 600,405 640,470" fill="#aaa"/>
+
+    <!-- Кровь -->
+    <ellipse cx="300" cy="500" rx="8" ry="20" fill="#8a0000"/>
+    <ellipse cx="500" cy="510" rx="10" ry="25" fill="#8a0000"/>
+    <ellipse cx="400" cy="540" rx="12" ry="30" fill="#6a0000"/>
+  </svg>
+</div>
+
+<div id="start">
+  <h1>В ТУМАНЕ</h1>
+  <p>Ты — слайм. Ты один.</p>
+  <p>Собери <b>10 душ</b>, чтобы спастись.</p>
+  <p>Но помни: ОНИ уже здесь.</p>
+  <p class="hint">[ НАЖМИ, ЧТОБЫ ВОЙТИ ]</p>
+</div>
+
+<div class="overlay" id="gameover">
+  <h1>ПОЙМАН</h1>
+  <p>Собрано душ: <span id="finalScore">0</span></p>
+  <p id="timeSurvived"></p>
+  <button id="restart">ПОПРОБОВАТЬ СНОВА</button>
+</div>
+
+<div class="overlay" id="victory">
+  <h1>СПАСЁН</h1>
+  <p>Ты собрал 10 душ и вырвался из тумана.</p>
+  <p>Но слаймы всегда возвращаются...</p>
+  <button id="restartWin">ИГРАТЬ СНОВА</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- Сцена ----------
+const scene = new THREE.Scene();
+const FOG_COLOR = 0x050508;
+scene.background = new THREE.Color(FOG_COLOR);
+scene.fog = new THREE.Fog(FOG_COLOR, 10, 60); // не слишком плотно, деревья видны
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 300);
+const renderer = new THREE.WebGLRenderer({
+  antialias: false,      // выкл для производительности
+  powerPreference: 'high-performance'
+});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// ---------- Свет (минимум!) ----------
+scene.add(new THREE.AmbientLight(0x2a2a35, 0.6));
+const moon = new THREE.DirectionalLight(0x445577, 0.5);
+moon.position.set(10, 30, -10);
+scene.add(moon);
+
+// ---------- Земля ----------
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(300, 300),
+  new THREE.MeshStandardMaterial({ color: 0x1a1a20, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+// ---------- Деревья через InstancedMesh (СУПЕР быстро) ----------
+const TREE_COUNT = 90;
+const treeGeo = new THREE.CylinderGeometry(0.15, 0.7, 7, 5);
+const treeMat = new THREE.MeshStandardMaterial({
+  color: 0x0d0a0a,      // непрозрачный чёрный
+  roughness: 1,
+  fog: true
+});
+const trees = new THREE.InstancedMesh(treeGeo, treeMat, TREE_COUNT);
+const dummy = new THREE.Object3D();
+for (let i = 0; i < TREE_COUNT; i++) {
+  let x, z;
+  do {
+    x = (Math.random() - 0.5) * 180;
+    z = (Math.random() - 0.5) * 180;
+  } while (Math.abs(x) < 10 && Math.abs(z) < 10);
+  dummy.position.set(x, 3.5, z);
+  dummy.rotation.set(
+    (Math.random() - 0.5) * 0.25,
+    Math.random() * Math.PI * 2,
+    (Math.random() - 0.5) * 0.25
+  );
+  dummy.scale.setScalar(0.7 + Math.random() * 1.0);
+  dummy.updateMatrix();
+  trees.setMatrixAt(i, dummy.matrix);
+}
+trees.instanceMatrix.needsUpdate = true;
+scene.add(trees);
+
+// Ветки — тоже инстансингом
+const branchGeo = new THREE.CylinderGeometry(0.04, 0.09, 2, 4);
+const branchMat = new THREE.MeshStandardMaterial({ color: 0x0a0808, roughness: 1 });
+const BRANCH_COUNT = 200;
+const branches = new THREE.InstancedMesh(branchGeo, branchMat, BRANCH_COUNT);
+for (let i = 0; i < BRANCH_COUNT; i++) {
+  dummy.position.set(
+    (Math.random() - 0.5) * 180,
+    3 + Math.random() * 4,
+    (Math.random() - 0.5) * 180
+  );
+  dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+  dummy.scale.setScalar(0.6 + Math.random() * 0.8);
+  dummy.updateMatrix();
+  branches.setMatrixAt(i, dummy.matrix);
+}
+branches.instanceMatrix.needsUpdate = true;
+scene.add(branches);
+
+// ---------- Слайм ----------
+const slimeGroup = new THREE.Group();
+const slimeBody = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 20, 20),
+  new THREE.MeshStandardMaterial({
+    color: 0x55ee77,
+    roughness: 0.3,
+    emissive: 0x116622,
+    emissiveIntensity: 0.6
+  })
+);
+slimeBody.position.y = 1;
+slimeGroup.add(slimeBody);
+
+const slimeCore = new THREE.Mesh(
+  new THREE.SphereGeometry(0.4, 12, 12),
+  new THREE.MeshBasicMaterial({ color: 0x00ff44 })
+);
+slimeCore.position.y = 1;
+slimeGroup.add(slimeCore);
+
+function makeEye(x) {
+  const eye = new THREE.Mesh(
+    new THREE.SphereGeometry(0.16, 10, 10),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  );
+  eye.position.set(x, 1.35, 0.9);
+  const pupil = new THREE.Mesh(
+    new THREE.SphereGeometry(0.09, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0x000000 })
+  );
+  pupil.position.z = 0.11;
+  eye.add(pupil);
+  return eye;
+}
+const eyeL = makeEye(-0.3);
+const eyeR = makeEye(0.3);
+slimeGroup.add(eyeL, eyeR);
+
+scene.add(slimeGroup);
+
+// Единственный динамический источник света — от слайма
+const slimeLight = new THREE.PointLight(0x55ee77, 1.5, 12, 2);
+slimeLight.position.y = 1.2;
+slimeGroup.add(slimeLight);
+
+// ---------- Души ----------
+const souls = [];
+const soulGeo = new THREE.OctahedronGeometry(0.4, 0);
+const soulMat = new THREE.MeshBasicMaterial({ color: 0x00ccff });
+
+function spawnSoul() {
+  const soul = new THREE.Mesh(soulGeo, soulMat);
+  let x, z, tries = 0;
+  do {
+    x = (Math.random() - 0.5) * 90;
+    z = (Math.random() - 0.5) * 90;
+    tries++;
+  } while (Math.hypot(x - slimeGroup.position.x, z - slimeGroup.position.z) < 12 && tries < 10);
+  soul.position.set(x, 1.2, z);
+  soul.userData.phase = Math.random() * Math.PI * 2;
+  scene.add(soul);
+  souls.push(soul);
+}
+for (let i = 0; i < 8; i++) spawnSoul();
+
+// ---------- Монстры ----------
+const monsters = [];
+
+const monsterBodyGeo = new THREE.CylinderGeometry(0.3, 1.2, 3.5, 8);
+const monsterBodyMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0000, roughness: 1, emissive: 0x220000, emissiveIntensity: 0.4
+});
+const monsterHeadGeo = new THREE.SphereGeometry(0.7, 12, 12);
+const eyeGeo = new THREE.SphereGeometry(0.14, 8, 8);
+const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+const armGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.5, 5);
+const armMat = new THREE.MeshStandardMaterial({ color: 0x050000 });
+
+function createMonster() {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(monsterBodyGeo, monsterBodyMat);
+  body.position.y = 1.75;
+  group.add(body);
+
+  const head = new THREE.Mesh(monsterHeadGeo, monsterBodyMat);
+  head.position.y = 3.6;
+  group.add(head);
+
+  const eL = new THREE.Mesh(eyeGeo, eyeMat);
+  eL.position.set(-0.22, 3.7, 0.55);
+  const eR = new THREE.Mesh(eyeGeo, eyeMat);
+  eR.position.set(0.22, 3.7, 0.55);
+  group.add(eL, eR);
+
+  for (const side of [-1, 1]) {
+    const arm = new THREE.Mesh(armGeo, armMat);
+    arm.position.set(side * 0.9, 2, 0.2);
+    arm.rotation.z = side * 0.4;
+    arm.rotation.x = -0.3;
+    group.add(arm);
+  }
+
+  scene.add(group);
+  return {
+    mesh: group,
+    baseSpeed: 2 + Math.random() * 1.2,
+    bobPhase: Math.random() * Math.PI * 2,
+    eL, eR
+  };
+}
+
+function spawnMonsterAwayFrom(playerPos, minDist = 45) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = minDist + Math.random() * 15;
+  const x = playerPos.x + Math.cos(angle) * dist;
+  const z = playerPos.z + Math.sin(angle) * dist;
+  const m = createMonster();
+  m.mesh.position.set(x, 0, z);
+  monsters.push(m);
+  return m;
+}
+
+// ---------- Управление ----------
+const keys = {};
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+});
+document.addEventListener('keyup', e => keys[e.code] = false);
+
+let yaw = 0;
+let targetYaw = 0;
+const MOUSE_SENSITIVITY = 0.0016;
+
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement !== renderer.domElement) return;
+  targetYaw -= e.movementX * MOUSE_SENSITIVITY;
+});
+
+// ---------- Состояние игры ----------
+const WIN_SCORE = 10;
+let gameStarted = false;
+let gameOver = false;
+let gameWon = false;
+let score = 0;
+let startTime = 0;
+let monsterSpawnTimer = 5;
+
+const startScreen = document.getElementById('start');
+const gameOverScreen = document.getElementById('gameover');
+const victoryScreen = document.getElementById('victory');
+const scoreEl = document.getElementById('score');
+const vignetteEl = document.getElementById('vignette');
+const warningEl = document.getElementById('warning');
+const finalScoreEl = document.getElementById('finalScore');
+const timeSurvivedEl = document.getElementById('timeSurvived');
+const jumpscareEl = document.getElementById('jumpscare');
+const flashEl = document.getElementById('flash');
+
+startScreen.addEventListener('click', () => {
+  renderer.domElement.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === renderer.domElement) {
+    startScreen.style.display = 'none';
+    gameStarted = true;
+  }
+});
+
+// ---------- Звук скримера ----------
+let audioCtx = null;
+function playScream() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = audioCtx.currentTime;
+
+    // Ревущий скрежет
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1400, now);
+    osc.frequency.exponentialRampToValueAtTime(80, now + 0.9);
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 0.9);
+
+    // Белый шум (шипение)
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.9, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 0.6);
+    }
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buf;
+    const nGain = audioCtx.createGain();
+    nGain.gain.value = 0.35;
+    noise.connect(nGain).connect(audioCtx.destination);
+    noise.start(now);
+
+    // Низкий гул
+    const sub = audioCtx.createOscillator();
+    const sGain = audioCtx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(60, now);
+    sub.frequency.exponentialRampToValueAtTime(25, now + 0.8);
+    sGain.gain.setValueAtTime(0.5, now);
+    sGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    sub.connect(sGain).connect(audioCtx.destination);
+    sub.start(now);
+    sub.stop(now + 0.8);
+  } catch (e) {}
+}
+
+// ---------- Физика ----------
+const MOVE_SPEED = 8;
+const GRAVITY = 30;
+let slimeY = 0;
+let slimeVelY = 0;
+let isGrounded = true;
+let squash = 0;
+let jumpCharge = 0;
+let jumpChargeTimer = 0;
+
+// ---------- Игровой цикл ----------
+const clock = new THREE.Clock();
+
+function resetGame() {
+  monsters.forEach(m => scene.remove(m.mesh));
+  monsters.length = 0;
+  souls.forEach(s => scene.remove(s));
+  souls.length = 0;
+  for (let i = 0; i < 8; i++) spawnSoul();
+
+  slimeGroup.position.set(0, 0, 0);
+  yaw = 0; targetYaw = 0;
+  slimeY = 0; slimeVelY = 0; isGrounded = true;
+  squash = 0; jumpCharge = 0; jumpChargeTimer = 0;
+  score = 0;
+  scoreEl.textContent = 'ДУШИ: 0 / 10';
+  monsterSpawnTimer = 5;
+  startTime = clock.elapsedTime;
+  gameOver = false;
+  gameWon = false;
+  gameOverScreen.classList.remove('show');
+  victoryScreen.classList.remove('show');
+  jumpscareEl.classList.remove('active');
+  flashEl.style.opacity = 0;
+  vignetteEl.style.boxShadow = 'none';
+  warningEl.style.opacity = 0;
+
+  renderer.domElement.requestPointerLock();
+}
+
+document.getElementById('restart').addEventListener('click', resetGame);
+document.getElementById('restartWin').addEventListener('click', resetGame);
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  if (!gameStarted) {
+    renderer.render(scene, camera);
+    return;
+  }
+
+  // Плавный поворот мыши
+  yaw += (targetYaw - yaw) * Math.min(dt * 14, 1);
+
+  // ------- УПРАВЛЕНИЕ -------
+  if (!gameOver && !gameWon) {
+    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+
+    const moveDir = new THREE.Vector3();
+    if (keys['KeyW'] || keys['ArrowUp']) moveDir.add(forward);
+    if (keys['KeyS'] || keys['ArrowDown']) moveDir.sub(forward);
+    if (keys['KeyD'] || keys['ArrowRight']) moveDir.add(right);
+    if (keys['KeyA'] || keys['ArrowLeft']) moveDir.sub(right);
+
+    const moving = moveDir.lengthSq() > 0;
+    if (moving) moveDir.normalize();
+
+    slimeGroup.position.x += moveDir.x * MOVE_SPEED * dt;
+    slimeGroup.position.z += moveDir.z * MOVE_SPEED * dt;
+    slimeGroup.position.x = Math.max(-95, Math.min(95, slimeGroup.position.x));
+    slimeGroup.position.z = Math.max(-95, Math.min(95, slimeGroup.position.z));
+
+    // Прыжок
+    if (keys['Space'] && isGrounded) {
+      jumpChargeTimer += dt;
+      jumpCharge = Math.min(jumpChargeTimer, 1);
+      squash = -jumpCharge * 0.5;
+    } else if (!keys['Space'] && isGrounded && jumpChargeTimer > 0) {
+      slimeVelY = 11 + jumpCharge * 13;
+      isGrounded = false;
+      squash = 1;
+      jumpChargeTimer = 0;
+      jumpCharge = 0;
+    }
+
+    if (!isGrounded) {
+      slimeVelY -= GRAVITY * dt;
+      slimeY += slimeVelY * dt;
+      if (slimeY <= 0) {
+        slimeY = 0;
+        squash = -Math.min(Math.abs(slimeVelY) / 25, 1);
+        slimeVelY = 0;
+        isGrounded = true;
+      }
+    }
+
+    if (moving) {
+      const targetAngle = Math.atan2(moveDir.x, moveDir.z);
+      let diff = targetAngle - slimeGroup.rotation.y;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      slimeGroup.rotation.y += diff * Math.min(dt * 10, 1);
+    }
+
+    // ------- Спавн монстров -------
+    monsterSpawnTimer -= dt;
+    if (monsterSpawnTimer <= 0 && monsters.length < 5) {
+      spawnMonsterAwayFrom(slimeGroup.position, 45);
+      monsterSpawnTimer = 10 + Math.random() * 5;
+    }
+
+    // ------- Движение монстров -------
+    let closestDist = Infinity;
+    const timeSurvived = t - startTime;
+
+    for (const m of monsters) {
+      const pos = m.mesh.position;
+      const dx = slimeGroup.position.x - pos.x;
+      const dz = slimeGroup.position.z - pos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < closestDist) closestDist = dist;
+
+      if (dist > 0.1) {
+        const nx = dx / dist;
+        const nz = dz / dist;
+        pos.x += nx * m.baseSpeed * dt;
+        pos.z += nz * m.baseSpeed * dt;
+      }
+
+      // Лёгкое покачивание по Y
+      pos.y = Math.sin(t * 3 + m.bobPhase) * 0.12;
+      m.mesh.rotation.y = Math.atan2(dx, dz);
+
+      // Мигание глаз
+      const flicker = 0.85 + Math.sin(t * 14 + m.bobPhase) * 0.15;
+      m.eL.scale.setScalar(flicker);
+      m.eR.scale.setScalar(flicker);
+
+      // Схватил!
+      if (dist < 1.7 && slimeY < 1.6) {
+        triggerJumpscare(timeSurvived);
+        return;
+      }
+    }
+
+    // Красная вуаль
+    const danger = Math.max(0, 1 - closestDist / 22);
+    if (danger > 0.02) {
+      const a = danger * 0.75;
+      vignetteEl.style.boxShadow =
+        `inset 0 0 ${180 + danger * 180}px ${60 + danger * 120}px rgba(${Math.round(120 + danger * 120)},0,0,${a})`;
+    } else {
+      vignetteEl.style.boxShadow = 'none';
+    }
+
+    if (closestDist < 9) {
+      warningEl.style.opacity = Math.min(1, (9 - closestDist) / 4) * (0.55 + Math.sin(t * 9) * 0.45);
+    } else {
+      warningEl.style.opacity = 0;
+    }
+
+    // ------- Сбор душ -------
+    for (let i = souls.length - 1; i >= 0; i--) {
+      const s = souls[i];
+      s.rotation.y += dt * 2.2;
+      s.rotation.x += dt * 1.4;
+      s.position.y = 1.2 + Math.sin(t * 2 + s.userData.phase) * 0.3;
+
+      const dx = s.position.x - slimeGroup.position.x;
+      const dz = s.position.z - slimeGroup.position.z;
+      const dy = s.position.y - (slimeY + 1);
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+
+      if (dist < 1.7) {
+        scene.remove(s);
+        souls.splice(i, 1);
+        score++;
+        scoreEl.textContent = `ДУШИ: ${score} / ${WIN_SCORE}`;
+
+        // Вспышка от сбора
+        flashEl.style.background = 'rgba(0,200,255,0.35)';
+        flashEl.style.transition = 'none';
+        flashEl.style.opacity = 1;
+        requestAnimationFrame(() => {
+          flashEl.style.transition = 'opacity 0.4s';
+          flashEl.style.opacity = 0;
+        });
+
+        // Новый монстр каждые 2 души
+        if (score % 2 === 0 && monsters.length < 6) {
+          spawnMonsterAwayFrom(slimeGroup.position, 40);
+        }
+
+        if (score >= WIN_SCORE) {
+          triggerVictory();
+          return;
+        }
+
+        spawnSoul();
+      }
+    }
+  }
+
+  // ------- Визуал слайма -------
+  squash *= 0.85;
+  const airStretch = isGrounded ? 0 : -slimeVelY * 0.01;
+  const sq = squash + airStretch * 0.5;
+  const pulse = 1 + Math.sin(t * 4) * 0.04;
+
+  slimeBody.scale.set((1 - sq * 0.4) * pulse, (1 + sq) * pulse, (1 - sq * 0.4) * pulse);
+  slimeCore.scale.copy(slimeBody.scale).multiplyScalar(0.9);
+
+  const bodyY = 1 * (1 + sq);
+  slimeBody.position.y = bodyY;
+  slimeCore.position.y = bodyY;
+  eyeL.position.y = bodyY + 0.35;
+  eyeR.position.y = bodyY + 0.35;
+  slimeLight.position.y = bodyY;
+
+  slimeGroup.position.y = slimeY;
+
+  // ------- Камера (упрощённая) -------
+  const camDist = 8;
+  const camHeight = 4.5;
+  const camTarget = new THREE.Vector3(slimeGroup.position.x, slimeY + 1.5, slimeGroup.position.z);
+  const camPos = new THREE.Vector3(
+    camTarget.x + Math.sin(yaw) * camDist,
+    camHeight,
+    camTarget.z + Math.cos(yaw) * camDist
+  );
+  camera.position.lerp(camPos, 0.2);
+  camera.lookAt(camTarget);
+
+  renderer.render(scene, camera);
+}
+
+// ---------- Скример ----------
+function triggerJumpscare(timeSurvived) {
+  gameOver = true;
+  playScream();
+
+  // Красная вспышка
+  flashEl.style.background = 'red';
+  flashEl.style.transition = 'none';
+  flashEl.style.opacity = 1;
+  requestAnimationFrame(() => {
+    flashEl.style.transition = 'opacity 0.8s';
+    flashEl.style.opacity = 0;
+  });
+
+  // Показать лицо
+  jumpscareEl.classList.add('active');
+  document.exitPointerLock();
+
+  // Через 1.2 сек — экран смерти
+  setTimeout(() => {
+    jumpscareEl.classList.remove('active');
+    finalScoreEl.textContent = score;
+    timeSurvivedEl.textContent = `Продержался: ${Math.floor(timeSurvived)} сек`;
+    gameOverScreen.classList.add('show');
+    vignetteEl.style.boxShadow = 'none';
+    warningEl.style.opacity = 0;
+  }, 1200);
+}
+
+// ---------- Победа ----------
+function triggerVictory() {
+  gameWon = true;
+  scoreEl.textContent = `ДУШИ: ${WIN_SCORE} / ${WIN_SCORE} ✓`;
+  document.exitPointerLock();
+
+  // Зелёная вспышка
+  flashEl.style.background = 'rgba(80,255,140,0.6)';
+  flashEl.style.transition = 'none';
+  flashEl.style.opacity = 1;
+  requestAnimationFrame(() => {
+    flashEl.style.transition = 'opacity 1.2s';
+    flashEl.style.opacity = 0;
+  });
+
+  // Мягкий победный звук
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = audioCtx.currentTime;
+    [523, 659, 784, 1047].forEach((f, i) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.001, now + i * 0.12);
+      g.gain.exponentialRampToValueAtTime(0.25, now + i * 0.12 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.12 + 0.4);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(now + i * 0.12);
+      o.stop(now + i * 0.12 + 0.4);
+    });
+  } catch (e) {}
+
+  setTimeout(() => {
+    victoryScreen.classList.add('show');
+  }, 600);
+}
+
+startTime = clock.elapsedTime;
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
